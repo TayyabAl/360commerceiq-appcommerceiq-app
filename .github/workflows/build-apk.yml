@@ -1,1 +1,259 @@
-build-apk.yml
+name: Build CommerceIQ 360 APK
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Create the Android project
+        run: |
+          set -e
+          mkdir -p android/app/src/main/java/pk/commerceiq/app
+          mkdir -p android/app/src/main/res/values android/app/src/main/res/layout
+          mkdir -p android/app/src/main/res/drawable android/app/src/main/res/mipmap-anydpi-v26
+          cd android
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "CommerceIQ"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "pk.commerceiq.app"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "pk.commerceiq.app"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+          }
+          dependencies {
+              implementation("androidx.browser:browser:1.8.0")
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <queries>
+                  <intent>
+                      <action android:name="android.support.customtabs.action.CustomTabsService" />
+                  </intent>
+              </queries>
+              <application
+                  android:label="@string/app_name"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:theme="@style/AppTheme"
+                  android:allowBackup="true">
+                  <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/pk/commerceiq/app/MainActivity.kt <<'EOF'
+          package pk.commerceiq.app
+
+          import android.app.Activity
+          import android.content.Intent
+          import android.graphics.Color
+          import android.net.Uri
+          import android.os.Bundle
+          import android.view.View
+          import androidx.browser.customtabs.CustomTabColorSchemeParams
+          import androidx.browser.customtabs.CustomTabsIntent
+
+          class MainActivity : Activity() {
+              private var launched = false
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+                  findViewById<View>(R.id.open_button).setOnClickListener { openApp() }
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  if (!launched) {
+                      launched = true
+                      openApp()
+                  }
+              }
+
+              private fun openApp() {
+                  val uri = Uri.parse(getString(R.string.app_url))
+                  val colors = CustomTabColorSchemeParams.Builder()
+                      .setToolbarColor(Color.parseColor("#0B1F5C"))
+                      .setNavigationBarColor(Color.parseColor("#0B1F5C"))
+                      .build()
+                  val tab = CustomTabsIntent.Builder()
+                      .setDefaultColorSchemeParams(colors)
+                      .setShowTitle(true)
+                      .setUrlBarHidingEnabled(true)
+                      .build()
+                  try {
+                      tab.launchUrl(this, uri)
+                  } catch (e: Exception) {
+                      startActivity(Intent(Intent.ACTION_VIEW, uri))
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">CommerceIQ 360</string>
+              <string name="app_url">https://claude.ai/artifact/5ZrzJFmT6uzU7JnFbtMefy</string>
+              <string name="tagline">Website intelligence for e-commerce</string>
+              <string name="open">Open CommerceIQ</string>
+              <string name="hint">Sign in to claude.ai in Chrome once. After that the app opens straight to your dashboard.</string>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/colors.xml <<'EOF'
+          <resources>
+              <color name="navy">#0B1F5C</color>
+              <color name="blue">#2563EB</color>
+              <color name="white">#FFFFFF</color>
+              <color name="soft">#C7D6FF</color>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/values/themes.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+                  <item name="android:windowBackground">@color/navy</item>
+                  <item name="android:statusBarColor">@color/navy</item>
+                  <item name="android:navigationBarColor">@color/navy</item>
+                  <item name="android:colorAccent">@color/blue</item>
+              </style>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/drawable/button_bg.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="@color/white" />
+              <corners android:radius="16dp" />
+          </shape>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:strokeColor="#FFFFFF" android:strokeWidth="6" android:fillColor="#00000000"
+                  android:pathData="M54,32a22,22 0 1,1 0,44a22,22 0 1,1 0,-44z" />
+              <path android:strokeColor="#FFFFFF" android:strokeWidth="5" android:strokeLineCap="round"
+                  android:pathData="M54,24L54,36M54,72L54,84M24,54L36,54M72,54L84,54" />
+              <path android:fillColor="#60A5FA" android:pathData="M54,47a7,7 0 1,1 0,14a7,7 0 1,1 0,-14z" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/navy" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent" android:layout_height="match_parent"
+              android:orientation="vertical" android:gravity="center"
+              android:padding="32dp" android:background="@color/navy">
+              <ImageView android:layout_width="120dp" android:layout_height="120dp"
+                  android:src="@drawable/ic_launcher_foreground" android:contentDescription="@string/app_name" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                  android:text="@string/app_name" android:textColor="@color/white"
+                  android:textSize="28sp" android:textStyle="bold" android:layout_marginTop="12dp" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                  android:text="@string/tagline" android:textColor="@color/soft"
+                  android:textSize="15sp" android:layout_marginTop="4dp" />
+              <Button android:id="@+id/open_button" android:layout_width="match_parent" android:layout_height="56dp"
+                  android:layout_marginTop="36dp" android:text="@string/open" android:textAllCaps="false"
+                  android:textSize="17sp" android:textStyle="bold" android:textColor="@color/navy"
+                  android:background="@drawable/button_bg" />
+              <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                  android:text="@string/hint" android:textColor="@color/soft" android:gravity="center"
+                  android:textSize="13sp" android:layout_marginTop="16dp" />
+          </LinearLayout>
+          EOF
+
+      - name: Build the APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk CommerceIQ-360.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CommerceIQ-360-apk
+          path: CommerceIQ-360.apk
+
+      - name: Publish a release with the APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: CommerceIQ 360 build ${{ github.run_number }}
+          body: Download CommerceIQ-360.apk below and open it on your Android phone to install.
+          files: CommerceIQ-360.apk
